@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head><title>AI Study Buddy</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+<body>
+  <h1>Upload Your Study Materials</h1>
+  <form action="/upload_text" method="post">
+    <textarea name="user_text"></textarea>
+    <button type="submit">Upload Text</button>
+  </form>
+
+  <form action="/upload_image" method="post" enctype="multipart/form-data">
+    <input type="file" name="image" accept="image/*">
+    <button type="submit">Upload PDF</button>
+  </form>
+
+  <form action="/upload_audio" method="POST" enctype="multipart/form-data">
+    <input type="file" name="audio" accept="audio/*" required>
+    <button type="submit">Upload Audio</button>
+</form>
+
+  <a href="/chat">Go to Chat</a>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>Chat</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+<body>
+  <h1>Ask a Question</h1>
+  <form method="post">
+    <input name="question" type="text" required>
+    <button type="submit">Ask</button>
+  </form>
+  <p><strong>Answer:</strong> {{ answer }}</p>
+  <a href="/">Back</a>
+</body>
+</html>
