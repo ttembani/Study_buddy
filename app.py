@@ -1,124 +1,108 @@
-from flask import Flask, render_template, request, redirect
-import firebase_admin
-from firebase_admin import credentials, firestore
-import cohere
-import requests
-import os
+from flask import Flask, render_template, request, jsonify, session
+from datetime import datetime
 import time
+import sqlite3
+import threading
+from flask_cors import CORS
+import os
+from rag_helper import ask_study_buddy, get_api_metrics
 
-# Initialize Firebase
-cred = credentials.Certificate("firebase_config.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
-
-# Initialize Cohere
-co = cohere.Client("ND85wjrOHGfyKsH4TiXB9aKQBhNzwUGSD3iecOft")
-
-# Initialize Flask
+# Initialize Flask app
 app = Flask(__name__)
+CORS(app)  # Enable CORS
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+
+# Database setup
+def init_db():
+    with sqlite3.connect('study_buddy.db') as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS conversations
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    api_used TEXT NOT NULL,
+                    response_time REAL NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS api_metrics
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    api_name TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    response_time REAL NOT NULL,
+                    success INTEGER NOT NULL)''')
+
+init_db()
 
 @app.route('/')
 def index():
+    if 'session_id' not in session:
+        session['session_id'] = str(datetime.now().timestamp())
     return render_template('index.html')
 
-@app.route('/upload_text', methods=['POST'])
-def upload_text():
-    user_text = request.form['user_text']
-    db.collection('documents').add({'text': user_text})
-    return redirect('/chat')
-
-@app.route('/upload_image', methods=['POST'])
-def upload_image():
-    image = request.files['image']
-    image_path = "temp.png"
-    image.save(image_path)
-    text = extract_text_from_image(image_path)
-    db.collection('documents').add({'text': text})
-    return redirect('/chat')
-
-@app.route('/upload_audio', methods=['POST'])
-def upload_audio():
-    if 'audio' not in request.files:
-        return 'No audio file uploaded', 400
+@app.route('/ask', methods=['POST'])
+def ask_question():
+    start_time = time.time()
+    question = request.form.get('question', '').strip()
     
-    audio_file = request.files['audio']
-    audio_file.save('audio.mp3')  # Save for processing
-    transcript = transcribe_audio('audio.mp3')  # Use your AssemblyAI code
-    return f"Transcribed text: {transcript}"
-
-@app.route('/chat', methods=['GET', 'POST'])
-def chat():
-    answer = ""
-    if request.method == 'POST':
-        question = request.form['question']
-        context = ""
-        docs = db.collection('documents').stream()
-        for doc in docs:
-            context += doc.to_dict().get('text', '') + " "
-        response = co.chat(message=question, documents=[{"title": "Study Notes", "text": context}])
-        answer = response.text
-    return render_template('chat.html', answer=answer)
-
-# OCR.Space API (Free)
-def extract_text_from_image(image_path):
-    with open(image_path, 'rb') as f:
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            files={'filename': f},
-            data={
-                'apikey': 'K86163064488957',  # Replace with your OCR.Space key if needed
-                'language': 'eng',
-                'isOverlayRequired': False
-            }
-        )
-    result = response.json()
-    if result['IsErroredOnProcessing']:
-        return "Failed to extract text."
-    return result['ParsedResults'][0]['ParsedText']
-
-def transcribe_audio(file_path):
-    with open(file_path, 'rb') as f:
-        response = requests.post(
-            'https://api.assemblyai.com/v2/upload',
-            headers={'authorization': 'b0d0ce0301d4405ab147494e6ccbf0fe'},
-            files={'file': f}
-        )
-    
-    # Debug print
-    print("Upload status code:", response.status_code)
-    print("Upload response text:", response.text)
-    
-    if response.status_code != 200:
-        raise Exception(f"Audio upload failed: {response.text}")
+    if not question:
+        return jsonify({'error': 'Question cannot be empty'}), 400
     
     try:
-        upload_url = response.json()['upload_url']
+        answer, api_used = ask_study_buddy(question)
+        response_time = time.time() - start_time
+        
+        with sqlite3.connect('study_buddy.db') as conn:
+            conn.execute('''INSERT INTO conversations VALUES
+                          (NULL, ?, ?, ?, ?, ?, ?)''',
+                          (session['session_id'], datetime.now().isoformat(),
+                           question, answer, api_used, response_time))
+        
+        return jsonify({
+            'answer': answer,
+            'api_used': api_used,
+            'response_time': round(response_time, 2)
+        })
     except Exception as e:
-        raise Exception(f"Failed to parse upload response JSON: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/history')
+def get_history():
+    if 'session_id' not in session:
+        return jsonify([])
     
-    transcribe_req = requests.post(
-        'https://api.assemblyai.com/v2/transcript',
-        headers={'authorization': 'b0d0ce0301d4405ab147494e6ccbf0fe'},
-        json={'audio_url': upload_url}
-    )
+    with sqlite3.connect('study_buddy.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('''SELECT question, answer, timestamp, api_used 
+                         FROM conversations 
+                         WHERE session_id = ? 
+                         ORDER BY timestamp DESC LIMIT 5''',
+                         (session['session_id'],))
+        history = [dict(zip(['question', 'answer', 'timestamp', 'api_used'], row)) 
+                  for row in cursor.fetchall()]
     
-    # Check transcription request success
-    if transcribe_req.status_code != 200:
-        raise Exception(f"Transcription request failed: {transcribe_req.text}")
-    
-    transcribe_id = transcribe_req.json()['id']
-    
+    return jsonify(history)
+
+@app.route('/metrics')
+def get_metrics():
+    return jsonify(get_api_metrics())
+
+@app.route('/test_key')
+def test_key():
+    from rag_helper import GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
+    return jsonify({
+        'Gemini': bool(GEMINI_API_KEY),
+        'OpenAI': bool(OPENAI_API_KEY),
+        'Anthropic': bool(ANTHROPIC_API_KEY)
+    })
+
+def cleanup_old_metrics():
     while True:
-        polling = requests.get(
-            f'https://api.assemblyai.com/v2/transcript/{transcribe_id}',
-            headers={'authorization': 'b0d0ce0301d4405ab147494e6ccbf0fe'}
-        )
-        result = polling.json()
-        if result['status'] == 'completed':
-            return result['text']
-        elif result['status'] == 'error':
-            return "Error transcribing"
-        time.sleep(2)
+        time.sleep(3600)
+        with sqlite3.connect('study_buddy.db') as conn:
+            conn.execute("DELETE FROM api_metrics WHERE timestamp < datetime('now', '-7 days')")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Render-specific configuration
+    port = int(os.environ.get('PORT', 5000))
+    threading.Thread(target=cleanup_old_metrics, daemon=True).start()
+    app.run(host='0.0.0.0', port=port)
