@@ -1,43 +1,65 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from datetime import datetime
 import time
-import sqlite3
-import threading
-from flask_cors import CORS
+import firebase_admin
+from firebase_admin import credentials, firestore
+import cohere
+from dotenv import load_dotenv
 import os
-from rag_helper import ask_study_buddy, get_api_metrics
+
+# Load environment variables
+load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
-# Database setup
-def init_db():
-    with sqlite3.connect('study_buddy.db') as conn:
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS conversations
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    question TEXT NOT NULL,
-                    answer TEXT NOT NULL,
-                    api_used TEXT NOT NULL,
-                    response_time REAL NOT NULL)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS api_metrics
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    api_name TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    response_time REAL NOT NULL,
-                    success INTEGER NOT NULL)''')
+# Initialize Firebase
+cred = credentials.Certificate(r"C:\\Users\27631\\Documents\\Study_buddy-3\\firebase_config.json.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
-init_db()
+# Initialize Cohere client
+cohere_api_key = os.getenv('COHERE_API_KEY')
+co = cohere.Client(cohere_api_key)
 
 @app.route('/')
 def index():
     if 'session_id' not in session:
         session['session_id'] = str(datetime.now().timestamp())
     return render_template('index.html')
+
+@app.route('/upload_text', methods=['POST'])
+def upload_text():
+    text = request.form.get('user_text', '').strip()
+    if not text:
+        return redirect(url_for('index'))
+    
+    try:
+        doc_ref = db.collection('study_materials').document()
+        doc_ref.set({
+            'type': 'text',
+            'content': text,
+            'timestamp': datetime.now().isoformat(),
+            'session_id': session.get('session_id', '')
+        })
+        return redirect(url_for('chat'))
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/upload_image', methods=['POST'])
+def upload_image():
+    # Basic implementation for image upload
+    return "Image upload functionality not implemented yet", 501
+
+@app.route('/upload_audio', methods=['POST'])
+def upload_audio():
+    # Basic implementation for audio upload
+    return "Audio upload functionality not implemented yet", 501
+
+@app.route('/chat')
+def chat():
+    return render_template('chat.html')
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
@@ -48,18 +70,38 @@ def ask_question():
         return jsonify({'error': 'Question cannot be empty'}), 400
     
     try:
-        answer, api_used = ask_study_buddy(question)
+        docs = db.collection('study_materials').order_by('timestamp', direction='DESCENDING').limit(3).get()
+        context = "\n".join([doc.to_dict().get('content', '') for doc in docs])
+        
+        response = co.generate(
+            model='command',
+            prompt=f"""You are an AI study assistant. Answer the question based on the provided context.
+            
+            Context: {context}
+            
+            Question: {question}
+            
+            Answer:""",
+            max_tokens=500,
+            temperature=0.7
+        )
+        
+        answer = response.generations[0].text.strip()
         response_time = time.time() - start_time
         
-        with sqlite3.connect('study_buddy.db') as conn:
-            conn.execute('''INSERT INTO conversations VALUES
-                          (NULL, ?, ?, ?, ?, ?, ?)''',
-                          (session['session_id'], datetime.now().isoformat(),
-                           question, answer, api_used, response_time))
+        doc_ref = db.collection('conversations').document()
+        doc_ref.set({
+            'session_id': session.get('session_id', ''),
+            'timestamp': datetime.now().isoformat(),
+            'question': question,
+            'answer': answer,
+            'api_used': 'Cohere',
+            'response_time': response_time
+        })
         
         return jsonify({
             'answer': answer,
-            'api_used': api_used,
+            'api_used': 'Cohere',
             'response_time': round(response_time, 2)
         })
     except Exception as e:
@@ -70,39 +112,26 @@ def get_history():
     if 'session_id' not in session:
         return jsonify([])
     
-    with sqlite3.connect('study_buddy.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute('''SELECT question, answer, timestamp, api_used 
-                         FROM conversations 
-                         WHERE session_id = ? 
-                         ORDER BY timestamp DESC LIMIT 5''',
-                         (session['session_id'],))
-        history = [dict(zip(['question', 'answer', 'timestamp', 'api_used'], row)) 
-                  for row in cursor.fetchall()]
-    
-    return jsonify(history)
-
-@app.route('/metrics')
-def get_metrics():
-    return jsonify(get_api_metrics())
-
-@app.route('/test_key')
-def test_key():
-    from rag_helper import GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
-    return jsonify({
-        'Gemini': bool(GEMINI_API_KEY),
-        'OpenAI': bool(OPENAI_API_KEY),
-        'Anthropic': bool(ANTHROPIC_API_KEY)
-    })
-
-def cleanup_old_metrics():
-    while True:
-        time.sleep(3600)
-        with sqlite3.connect('study_buddy.db') as conn:
-            conn.execute("DELETE FROM api_metrics WHERE timestamp < datetime('now', '-7 days')")
+    try:
+        docs = db.collection('conversations')\
+                .where('session_id', '==', session['session_id'])\
+                .order_by('timestamp', direction='DESCENDING')\
+                .limit(5)\
+                .get()
+        
+        history = []
+        for doc in docs:
+            data = doc.to_dict()
+            history.append({
+                'question': data.get('question', ''),
+                'answer': data.get('answer', ''),
+                'timestamp': data.get('timestamp', ''),
+                'api_used': data.get('api_used', '')
+            })
+        
+        return jsonify(history)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Render-specific configuration
-    port = int(os.environ.get('PORT', 5000))
-    threading.Thread(target=cleanup_old_metrics, daemon=True).start()
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000, debug=True)
