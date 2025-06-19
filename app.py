@@ -16,34 +16,36 @@ app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # Initialize Firebase
+# Initialize Firebase
 try:
+    private_key = os.getenv("FIREBASE_PRIVATE_KEY")
+    if not private_key:
+        raise ValueError("FIREBASE_PRIVATE_KEY environment variable is missing")
+    
     firebase_config = {
-        "type": os.getenv("FIREBASE_TYPE"),
+        "type": os.getenv("FIREBASE_TYPE", "service_account"),
         "project_id": os.getenv("FIREBASE_PROJECT_ID"),
         "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-        "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
+        "private_key": private_key.replace('\\n', '\n'),
         "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
         "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-        "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
-        "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
-        "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+        "auth_uri": os.getenv("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
+        "token_uri": os.getenv("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+        "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL", "https://www.googleapis.com/oauth2/v1/certs"),
         "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
     }
+    
+    # Verify all required fields are present
+    required_fields = ["project_id", "private_key", "client_email"]
+    for field in required_fields:
+        if not firebase_config.get(field):
+            raise ValueError(f"Missing required Firebase config field: {field}")
+    
     cred = credentials.Certificate(firebase_config)
     firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
     print(f"Firebase initialization failed: {str(e)}")
-    raise
-
-# Initialize Cohere client
-try:
-    cohere_api_key = os.getenv('COHERE_API_KEY')
-    if not cohere_api_key:
-        raise ValueError("COHERE_API_KEY not found in environment variables")
-    co = cohere.Client(cohere_api_key)
-except Exception as e:
-    print(f"Cohere initialization failed: {str(e)}")
     raise
 
 @app.route('/')
