@@ -3,6 +3,7 @@ from datetime import datetime
 import time
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 import cohere
 from dotenv import load_dotenv
 import os
@@ -15,13 +16,23 @@ app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # Initialize Firebase
-cred = credentials.Certificate(r"C:\\Users\27631\\Documents\\Study_buddy-3\\firebase_config.json.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+try:
+    cred = credentials.Certificate("C:\\Users\\27631\\Documents\\Study_buddy-3\\firebase_config.json.json")  # Simplified path
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"Firebase initialization failed: {str(e)}")
+    raise
 
 # Initialize Cohere client
-cohere_api_key = os.getenv('COHERE_API_KEY')
-co = cohere.Client(cohere_api_key)
+try:
+    cohere_api_key = os.getenv('COHERE_API_KEY')
+    if not cohere_api_key:
+        raise ValueError("COHERE_API_KEY not found in environment variables")
+    co = cohere.Client(cohere_api_key)
+except Exception as e:
+    print(f"Cohere initialization failed: {str(e)}")
+    raise
 
 @app.route('/')
 def index():
@@ -45,17 +56,8 @@ def upload_text():
         })
         return redirect(url_for('chat'))
     except Exception as e:
-        return str(e), 500
-
-@app.route('/upload_image', methods=['POST'])
-def upload_image():
-    # Basic implementation for image upload
-    return "Image upload functionality not implemented yet", 501
-
-@app.route('/upload_audio', methods=['POST'])
-def upload_audio():
-    # Basic implementation for audio upload
-    return "Audio upload functionality not implemented yet", 501
+        app.logger.error(f"Upload text error: {str(e)}")
+        return "An error occurred", 500
 
 @app.route('/chat')
 def chat():
@@ -70,12 +72,17 @@ def ask_question():
         return jsonify({'error': 'Question cannot be empty'}), 400
     
     try:
-        docs = db.collection('study_materials').order_by('timestamp', direction='DESCENDING').limit(3).get()
+        # Get context from Firestore
+        docs = db.collection('study_materials')\
+                .order_by('timestamp', direction='DESCENDING')\
+                .limit(3)\
+                .get()
         context = "\n".join([doc.to_dict().get('content', '') for doc in docs])
         
+        # Generate answer using Cohere
         response = co.generate(
             model='command',
-            prompt=f"""You are an AI study assistant. Answer the question based on the provided context.
+            prompt=f"""You are an AI study assistant. Answer the question based on the context.
             
             Context: {context}
             
@@ -85,10 +92,9 @@ def ask_question():
             max_tokens=500,
             temperature=0.7
         )
-        
         answer = response.generations[0].text.strip()
-        response_time = time.time() - start_time
         
+        # Store conversation
         doc_ref = db.collection('conversations').document()
         doc_ref.set({
             'session_id': session.get('session_id', ''),
@@ -96,15 +102,16 @@ def ask_question():
             'question': question,
             'answer': answer,
             'api_used': 'Cohere',
-            'response_time': response_time
+            'response_time': time.time() - start_time
         })
         
         return jsonify({
             'answer': answer,
             'api_used': 'Cohere',
-            'response_time': round(response_time, 2)
+            'response_time': round(time.time() - start_time, 2)
         })
     except Exception as e:
+        app.logger.error(f"Ask question error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/history')
@@ -114,24 +121,22 @@ def get_history():
     
     try:
         docs = db.collection('conversations')\
-                .where('session_id', '==', session['session_id'])\
+                .where(filter=FieldFilter('session_id', '==', session['session_id']))\
                 .order_by('timestamp', direction='DESCENDING')\
                 .limit(5)\
                 .get()
         
-        history = []
-        for doc in docs:
-            data = doc.to_dict()
-            history.append({
-                'question': data.get('question', ''),
-                'answer': data.get('answer', ''),
-                'timestamp': data.get('timestamp', ''),
-                'api_used': data.get('api_used', '')
-            })
+        history = [{
+            'question': doc.to_dict().get('question', ''),
+            'answer': doc.to_dict().get('answer', ''),
+            'timestamp': doc.to_dict().get('timestamp', ''),
+            'api_used': doc.to_dict().get('api_used', '')
+        } for doc in docs]
         
         return jsonify(history)
     except Exception as e:
+        app.logger.error(f"Get history error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)  # Debug=False for production
