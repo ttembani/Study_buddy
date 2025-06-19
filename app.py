@@ -10,7 +10,7 @@ import os
 # Add this at the start of your app.py
 import time
 time.tzset()  # Sync system time
-
+from datetime import datetime, timedelta
 # Load environment variables
 load_dotenv()
 
@@ -20,36 +20,42 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # Initialize Firebase
 # Initialize Firebase
-try:
-    private_key = os.getenv("FIREBASE_PRIVATE_KEY")
-    if not private_key:
-        raise ValueError("FIREBASE_PRIVATE_KEY environment variable is missing")
-    
-    firebase_config = {
-        "type": os.getenv("FIREBASE_TYPE", "service_account"),
-        "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-        "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-        "private_key": private_key.replace('\\n', '\n'),
-        "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-        "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-        "auth_uri": os.getenv("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
-        "token_uri": os.getenv("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
-        "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL", "https://www.googleapis.com/oauth2/v1/certs"),
-        "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
-    }
-    
-    # Verify all required fields are present
-    required_fields = ["project_id", "private_key", "client_email"]
-    for field in required_fields:
-        if not firebase_config.get(field):
-            raise ValueError(f"Missing required Firebase config field: {field}")
-    
-    cred = credentials.Certificate(firebase_config)
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    print(f"Firebase initialization failed: {str(e)}")
-    raise
+# Initialize Firebase with token refresh
+def init_firebase():
+    try:
+        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
+        if not private_key:
+            raise ValueError("Missing Firebase private key")
+            
+        firebase_config = {
+            "type": "service_account",
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": private_key,
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
+        }
+        
+        cred = credentials.Certificate(firebase_config)
+        return firebase_admin.initialize_app(cred)
+    except Exception as e:
+        app.logger.error(f"Firebase init error: {str(e)}")
+        raise
+
+# Initialize with automatic retry
+for _ in range(3):  # Retry 3 times
+    try:
+        fb_app = init_firebase()
+        db = firestore.client()
+        break
+    except Exception as e:
+        time.sleep(5)
+else:
+    raise RuntimeError("Failed to initialize Firebase after 3 attempts")
 
 @app.route('/')
 def index():
