@@ -7,6 +7,9 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 import cohere
 from dotenv import load_dotenv
 import os
+# Add this at the start of your app.py
+import time
+time.tzset()  # Sync system time
 
 # Load environment variables
 load_dotenv()
