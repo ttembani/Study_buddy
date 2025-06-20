@@ -1,12 +1,10 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <title>Chat</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
-
 <body>
   <div class="chat-container">
     <h1>Ask a Question</h1>
@@ -42,6 +40,10 @@
           body: `question=${encodeURIComponent(question)}`
         });
 
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const data = await response.json();
         if (data.error) {
           answerDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
@@ -51,6 +53,7 @@
         }
       } catch (error) {
         answerDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        console.error('Error:', error);
       }
 
       e.target.reset();
@@ -59,6 +62,10 @@
     async function loadHistory() {
       try {
         const response = await fetch('/history');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const history = await response.json();
         const historyDiv = document.getElementById('history');
 
@@ -75,12 +82,12 @@
         let html = '<ul>';
         history.forEach(item => {
           html += `
-                        <li>
-                            <strong>Q:</strong> ${item.question}<br>
-                            <strong>A:</strong> ${marked.parse(item.answer)}
-                            <small>${new Date(item.timestamp).toLocaleString()}</small>
-                        </li>
-                    `;
+            <li>
+              <strong>Q:</strong> ${item.question}<br>
+              <strong>A:</strong> ${marked.parse(item.answer)}
+              <small>${new Date(item.timestamp).toLocaleString()}</small>
+            </li>
+          `;
         });
         html += '</ul>';
         historyDiv.innerHTML = html;
@@ -93,5 +100,4 @@
     document.addEventListener('DOMContentLoaded', loadHistory);
   </script>
 </body>
-
 </html>
