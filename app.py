@@ -7,10 +7,7 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 import cohere
 from dotenv import load_dotenv
 import os
-# Add this at the start of your app.py
-import time
-time.tzset()  # Sync system time
-from datetime import datetime, timedelta
+
 # Load environment variables
 load_dotenv()
 
@@ -18,9 +15,19 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
-# Initialize Firebase
-# Initialize Firebase
-# Initialize Firebase with token refresh
+# Initialize Cohere client first (since it's used in routes)
+co = None
+try:
+    cohere_api_key = os.getenv('COHERE_API_KEY')
+    if not cohere_api_key:
+        raise ValueError("COHERE_API_KEY is missing from environment variables")
+    co = cohere.Client(cohere_api_key)
+    print("Cohere client initialized successfully")
+except Exception as e:
+    print(f"Failed to initialize Cohere client: {str(e)}")
+    co = None
+
+# Initialize Firebase with error handling
 def init_firebase():
     try:
         private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
@@ -46,13 +53,16 @@ def init_firebase():
         app.logger.error(f"Firebase init error: {str(e)}")
         raise
 
-# Initialize with automatic retry
-for _ in range(3):  # Retry 3 times
+# Initialize Firebase with retry
+db = None
+for _ in range(3):
     try:
         fb_app = init_firebase()
         db = firestore.client()
+        print("Firebase initialized successfully")
         break
     except Exception as e:
+        print(f"Firebase init attempt failed: {str(e)}")
         time.sleep(5)
 else:
     raise RuntimeError("Failed to initialize Firebase after 3 attempts")
@@ -65,6 +75,9 @@ def index():
 
 @app.route('/upload_text', methods=['POST'])
 def upload_text():
+    if not db:
+        return "Database not available", 500
+        
     text = request.form.get('user_text', '').strip()
     if not text:
         return redirect(url_for('index'))
@@ -88,6 +101,9 @@ def chat():
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
+    if not co or not db:
+        return jsonify({'error': 'AI service is currently unavailable'}), 503
+        
     start_time = time.time()
     question = request.form.get('question', '').strip()
     
@@ -139,6 +155,9 @@ def ask_question():
 
 @app.route('/history')
 def get_history():
+    if not db:
+        return jsonify({'error': 'Database not available'}), 500
+        
     if 'session_id' not in session:
         return jsonify([])
     
@@ -162,4 +181,4 @@ def get_history():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)  # Debug=False for production
+    app.run(host='0.0.0.0', port=5000, debug=False)
