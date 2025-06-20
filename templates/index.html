@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="text-align:center; margin-top:2rem;">
+    <h1>Welcome to Smart Exam Helper</h1>
+    <p>Select an option below to get started:</p>
+    <nav>
+        <ul class="menu">
+            <li><a href="{{ url_for('study') }}">Text Study Assistant</a></li>
+            <li><a href="{{ url_for('voice') }}">Voice Question Assistant</a></li>
+            <li><a href="{{ url_for('image') }}">Image Text Extractor</a></li>
+        </ul>
+    </nav>
+</div>
+{% endblock %}

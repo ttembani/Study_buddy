@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set hide_navbar = true %}
+
+{% block content %}
+<div class="container" style="text-align: center;">
+  <h1>Welcome to Smart Exam Helper</h1>
+  <p>Your AI-powered study companion for images, voice, PDF, and more!</p>
+  <a href="{{ url_for('study') }}"><button>🚀 Proceed</button></a>
+</div>
+{% endblock %}
