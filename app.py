@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-
 from flask import Flask, render_template, request, jsonify
 from rag_helper import ask_study_buddy
 
@@ -408,4 +406,4 @@ def get_history():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
->>>>>>> 93f3c2631af7d5ae6ac5f2e3f00e602294eac5ba
+
