@@ -56,7 +56,8 @@ except Exception as e:
     print(f"Failed to initialize Firebase: {str(e)}")
 
 # Import other utilities after app creation to avoid circular imports
-from rag_helper import ask_study_buddy, GEMINI_API_KEY
+# Update your imports in app.py (around line 59)
+from rag_helper import ask_study_buddy, GOOGLE_API_KEY as GEMINI_API_KEY  # or fix in rag_helper.py
 from utils.cohere_handler import generate_answer
 from utils.db_handler import save_qa_to_db
 from utils.speech_handler import transcribe_audio
