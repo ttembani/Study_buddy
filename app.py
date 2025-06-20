@@ -36,7 +36,7 @@ from utils.vision_handler import extract_text_from_image
 
 load_dotenv()
 
-app = Flask(__name__)
+
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
