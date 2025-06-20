@@ -11,7 +11,7 @@ from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 import cohere
 
-# Load environment variables
+# Load environment variables first
 load_dotenv()
 
 # Initialize Flask app
@@ -21,47 +21,62 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('static', exist_ok=True)
 
-# Initialize Cohere client
-co = None
-try:
-    cohere_api_key = os.getenv('COHERE_API_KEY')
-    if cohere_api_key:
-        co = cohere.Client(cohere_api_key)
-        print("Cohere client initialized successfully")
-except Exception as e:
-    print(f"Failed to initialize Cohere client: {str(e)}")
+# Initialize services
+def initialize_services():
+    # Initialize Cohere
+    co = None
+    try:
+        cohere_api_key = os.getenv('COHERE_API_KEY')
+        if cohere_api_key:
+            co = cohere.Client(cohere_api_key)
+            print("Cohere client initialized successfully")
+    except Exception as e:
+        print(f"Failed to initialize Cohere client: {str(e)}")
 
-# Initialize Firebase
-db = None
-try:
-    private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
-    if private_key:
-        firebase_config = {
-            "type": "service_account",
-            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": private_key,
-            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
-        }
-        cred = credentials.Certificate(firebase_config)
-        fb_app = firebase_admin.initialize_app(cred)
-        db = firestore.client()
-        print("Firebase initialized successfully")
-except Exception as e:
-    print(f"Failed to initialize Firebase: {str(e)}")
+    # Initialize Firebase
+    db = None
+    try:
+        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
+        if private_key:
+            firebase_config = {
+                "type": "service_account",
+                "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+                "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+                "private_key": private_key,
+                "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+                "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
+            }
+            cred = credentials.Certificate(firebase_config)
+            fb_app = firebase_admin.initialize_app(cred)
+            db = firestore.client()
+            print("Firebase initialized successfully")
+    except Exception as e:
+        print(f"Failed to initialize Firebase: {str(e)}")
+    
+    return co, db
 
-# Import other utilities after app creation to avoid circular imports
-# Update your imports in app.py (around line 59)
-from rag_helper import ask_study_buddy, GOOGLE_API_KEY as GEMINI_API_KEY  # or fix in rag_helper.py
-from utils.cohere_handler import generate_answer
-from utils.db_handler import save_qa_to_db
-from utils.speech_handler import transcribe_audio
-from utils.vision_handler import extract_text_from_image
+co, db = initialize_services()
+
+# Import utilities after services are initialized
+try:
+    from rag_helper import ask_study_buddy, GEMINI_API_KEY
+    from utils.cohere_handler import generate_answer
+    from utils.db_handler import save_qa_to_db
+    from utils.speech_handler import transcribe_audio
+    from utils.vision_handler import extract_text_from_image
+except ImportError as e:
+    print(f"Import error: {str(e)}")
+    # Provide fallbacks or raise if these are critical
+    ask_study_buddy = lambda x: "Service unavailable"
+    GEMINI_API_KEY = None
+    generate_answer = lambda x: "Answer service unavailable"
+    save_qa_to_db = lambda *args: None
+    transcribe_audio = lambda x: "Transcription unavailable"
+    extract_text_from_image = lambda x: "Text extraction unavailable"
 
 # In-memory user store
 users = {}
@@ -84,6 +99,20 @@ def index():
     if 'session_id' not in session:
         session['session_id'] = str(datetime.now().timestamp())
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    """Endpoint for health checks"""
+    services_ok = {
+        'cohere': co is not None,
+        'firebase': db is not None,
+        'gemini': GEMINI_API_KEY is not None
+    }
+    status = 200 if all(services_ok.values()) else 503
+    return jsonify({
+        'status': 'healthy' if status == 200 else 'degraded',
+        'services': services_ok
+    }), status
 
 @app.route('/home')
 @login_required
@@ -132,9 +161,12 @@ def logout():
 
 @app.route('/ask', methods=['POST'])
 def ask():
-    question = request.form['question']
-    response = ask_study_buddy(question)
-    return jsonify({'answer': response})
+    try:
+        question = request.form['question']
+        response = ask_study_buddy(question)
+        return jsonify({'answer': response})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route("/test_key")
 def test_key():
@@ -270,7 +302,6 @@ def upload_text():
         })
         return redirect(url_for('chat'))
     except Exception as e:
-        app.logger.error(f"Upload text error: {str(e)}")
         return "An error occurred", 500
 
 @app.route('/chat')
@@ -325,7 +356,6 @@ def ask_question():
             'response_time': round(time.time() - start_time, 2)
         })
     except Exception as e:
-        app.logger.error(f"Ask question error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/history')
@@ -352,7 +382,6 @@ def get_history():
         
         return jsonify(history)
     except Exception as e:
-        app.logger.error(f"Get history error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
