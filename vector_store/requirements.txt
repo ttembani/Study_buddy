@@ -1,0 +1,7 @@
+Flask
+cohere
+firebase-admin
+chromadb
+openai
+google-generativeai
+python-dotenv

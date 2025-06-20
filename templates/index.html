@@ -1,3 +1,37 @@
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Study Buddy</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Ask the Study Buddy</h1>
+    <form id="questionForm">
+        <input type="text" name="question" placeholder="Type your question..." required />
+        <button type="submit">Ask</button>
+    </form>
+    <div id="response"></div>
+
+    <script>
+        document.getElementById("questionForm").onsubmit = async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const res = await fetch('/ask', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            document.getElementById("response").innerText = data.answer;
+        }
+    </script>
+</body>
+</html>
+=======
+>>>>>>> 855c97041aa2455254c7c41f1bc7c084abf04355
 {% extends "base.html" %}
 
 {% block content %}
@@ -13,3 +47,40 @@
     </nav>
 </div>
 {% endblock %}
+<<<<<<< HEAD
+=======
+>>>>>>> 05620c5 (Initial commit)
+=======
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>AI Study Buddy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+  <div class="container">
+    <h1>Upload Your Study Materials</h1>
+    <form action="/upload_text" method="post">
+      <textarea name="user_text" placeholder="Paste your study text here..." required></textarea>
+      <button type="submit">Upload Text</button>
+    </form>
+
+    <form action="/upload_image" method="post" enctype="multipart/form-data">
+      <input type="file" name="image" accept="image/*">
+      <button type="submit">Upload Image</button>
+    </form>
+
+    <form action="/upload_audio" method="post" enctype="multipart/form-data">
+      <input type="file" name="audio" accept="audio/*">
+      <button type="submit">Upload Audio</button>
+    </form>
+
+    <a href="/chat" class="chat-link">Go to Chat</a>
+  </div>
+</body>
+
+</html>
+>>>>>>> 93f3c2631af7d5ae6ac5f2e3f00e602294eac5ba
+>>>>>>> 855c97041aa2455254c7c41f1bc7c084abf04355

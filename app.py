@@ -1,3 +1,32 @@
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+
+from flask import Flask, render_template, request, jsonify
+from rag_helper import ask_study_buddy
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/ask', methods=['POST'])
+def ask():
+    question = request.form['question']
+    response = ask_study_buddy(question)
+    return jsonify({'answer': response})
+
+@app.route("/test_key")
+def test_key():
+    from rag_helper import GEMINI_API_KEY  # or however you import it
+    if GEMINI_API_KEY:
+        return f"Gemini API Key Loaded: {GEMINI_API_KEY[:4]}... (length: {len(GEMINI_API_KEY)})"
+    else:
+        return "Gemini API Key NOT loaded!"
+
+
+>>>>>>> 855c97041aa2455254c7c41f1bc7c084abf04355
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file  # type: ignore
 from utils.cohere_handler import generate_answer
 from utils.db_handler import save_qa_to_db
@@ -194,5 +223,197 @@ def download_pdf_answer():
 def profile():
     return render_template('profile.html', email=session.get('user_email'))
 
+<<<<<<< HEAD
 if __name__ == '__main__':
     app.run(debug=True)
+=======
+
+if __name__ == '__main__':
+    app.run(debug=True)
+=======
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from datetime import datetime
+import time
+import firebase_admin
+from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+import cohere
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Flask app
+app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+
+# Initialize Cohere client first (since it's used in routes)
+co = None
+try:
+    cohere_api_key = os.getenv('COHERE_API_KEY')
+    if not cohere_api_key:
+        raise ValueError("COHERE_API_KEY is missing from environment variables")
+    co = cohere.Client(cohere_api_key)
+    print("Cohere client initialized successfully")
+except Exception as e:
+    print(f"Failed to initialize Cohere client: {str(e)}")
+    co = None
+
+# Initialize Firebase with error handling
+def init_firebase():
+    try:
+        private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace('\\n', '\n')
+        if not private_key:
+            raise ValueError("Missing Firebase private key")
+            
+        firebase_config = {
+            "type": "service_account",
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": private_key,
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
+        }
+        
+        cred = credentials.Certificate(firebase_config)
+        return firebase_admin.initialize_app(cred)
+    except Exception as e:
+        app.logger.error(f"Firebase init error: {str(e)}")
+        raise
+
+# Initialize Firebase with retry
+db = None
+for _ in range(3):
+    try:
+        fb_app = init_firebase()
+        db = firestore.client()
+        print("Firebase initialized successfully")
+        break
+    except Exception as e:
+        print(f"Firebase init attempt failed: {str(e)}")
+        time.sleep(5)
+else:
+    raise RuntimeError("Failed to initialize Firebase after 3 attempts")
+
+@app.route('/')
+def index():
+    if 'session_id' not in session:
+        session['session_id'] = str(datetime.now().timestamp())
+    return render_template('index.html')
+
+@app.route('/upload_text', methods=['POST'])
+def upload_text():
+    if not db:
+        return "Database not available", 500
+        
+    text = request.form.get('user_text', '').strip()
+    if not text:
+        return redirect(url_for('index'))
+    
+    try:
+        doc_ref = db.collection('study_materials').document()
+        doc_ref.set({
+            'type': 'text',
+            'content': text,
+            'timestamp': datetime.now().isoformat(),
+            'session_id': session.get('session_id', '')
+        })
+        return redirect(url_for('chat'))
+    except Exception as e:
+        app.logger.error(f"Upload text error: {str(e)}")
+        return "An error occurred", 500
+
+@app.route('/chat')
+def chat():
+    return render_template('chat.html')
+
+@app.route('/ask', methods=['POST'])
+def ask_question():
+    if not co or not db:
+        return jsonify({'error': 'AI service is currently unavailable'}), 503
+        
+    start_time = time.time()
+    question = request.form.get('question', '').strip()
+    
+    if not question:
+        return jsonify({'error': 'Question cannot be empty'}), 400
+    
+    try:
+        # Get context from Firestore
+        docs = db.collection('study_materials')\
+                .order_by('timestamp', direction='DESCENDING')\
+                .limit(3)\
+                .get()
+        context = "\n".join([doc.to_dict().get('content', '') for doc in docs])
+        
+        # Generate answer using Cohere
+        response = co.generate(
+            model='command',
+            prompt=f"""You are an AI study assistant. Answer the question based on the context.
+            
+            Context: {context}
+            
+            Question: {question}
+            
+            Answer:""",
+            max_tokens=500,
+            temperature=0.7
+        )
+        answer = response.generations[0].text.strip()
+        
+        # Store conversation
+        doc_ref = db.collection('conversations').document()
+        doc_ref.set({
+            'session_id': session.get('session_id', ''),
+            'timestamp': datetime.now().isoformat(),
+            'question': question,
+            'answer': answer,
+            'api_used': 'Cohere',
+            'response_time': time.time() - start_time
+        })
+        
+        return jsonify({
+            'answer': answer,
+            'api_used': 'Cohere',
+            'response_time': round(time.time() - start_time, 2)
+        })
+    except Exception as e:
+        app.logger.error(f"Ask question error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/history')
+def get_history():
+    if not db:
+        return jsonify({'error': 'Database not available'}), 500
+        
+    if 'session_id' not in session:
+        return jsonify([])
+    
+    try:
+        docs = db.collection('conversations')\
+                .where(filter=FieldFilter('session_id', '==', session['session_id']))\
+                .order_by('timestamp', direction='DESCENDING')\
+                .limit(5)\
+                .get()
+        
+        history = [{
+            'question': doc.to_dict().get('question', ''),
+            'answer': doc.to_dict().get('answer', ''),
+            'timestamp': doc.to_dict().get('timestamp', ''),
+            'api_used': doc.to_dict().get('api_used', '')
+        } for doc in docs]
+        
+        return jsonify(history)
+    except Exception as e:
+        app.logger.error(f"Get history error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)
+>>>>>>> 93f3c2631af7d5ae6ac5f2e3f00e602294eac5ba
+>>>>>>> 855c97041aa2455254c7c41f1bc7c084abf04355
