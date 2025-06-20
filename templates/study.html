@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h2>Ask a Question</h2>
+
+    <form method="POST">
+        <label for="question">Your Question:</label>
+        <textarea id="question" name="question" required>{{ request.form.get('question', '') }}</textarea>
+
+        <!-- 🎤 Voice Recorder Button -->
+        <button type="button" onclick="startDictation()" style="margin-top: 0.5rem;">🎤 Speak</button>
+
+        <br><br>
+        <input type="submit" value="Ask">
+    </form>
+
+    {% if answer %}
+    <div class="answer-box">
+        <strong>Answer:</strong><br>
+        {{ answer }}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+  function startDictation() {
+    if ('webkitSpeechRecognition' in window) {
+      const recognition = new webkitSpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = function (event) {
+        const transcript = event.results[0][0].transcript;
+        document.getElementById('question').value = transcript;
+      };
+
+      recognition.onerror = function (event) {
+        alert('Speech recognition error: ' + event.error);
+      };
+
+      recognition.start();
+    } else {
+      alert("Speech recognition is not supported in this browser.");
+    }
+  }
+</script>
+{% endblock %}

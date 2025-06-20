@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ title if title else "Smart Exam Helper" }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="container">
+    {% if not hide_navbar %}
+      <nav>
+        <ul class="menu horizontal">
+          <li><a href="{{ url_for('study') }}">Study</a></li>
+          <li><a href="{{ url_for('voice') }}">Voice</a></li>
+          <li><a href="{{ url_for('image') }}">Image</a></li>
+          <li><a href="{{ url_for('pdf') }}">PDF Q&A</a></li>
+          {% if session.get('user_email') %}
+            <li><a href="{{ url_for('profile') }}">Profile</a></li>
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
+          {% endif %}
+        </ul>
+      </nav>
+      <hr>
+    {% endif %}
+
+    <!-- ✅ Only ONE block content allowed -->
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

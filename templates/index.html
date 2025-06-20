@@ -1,3 +1,51 @@
+<<<<<<< HEAD
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Study Buddy</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Ask the Study Buddy</h1>
+    <form id="questionForm">
+        <input type="text" name="question" placeholder="Type your question..." required />
+        <button type="submit">Ask</button>
+    </form>
+    <div id="response"></div>
+
+    <script>
+        document.getElementById("questionForm").onsubmit = async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const res = await fetch('/ask', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            document.getElementById("response").innerText = data.answer;
+        }
+    </script>
+</body>
+</html>
+=======
+{% extends "base.html" %}
+
+{% block content %}
+<div style="text-align:center; margin-top:2rem;">
+    <h1>Welcome to Smart Exam Helper</h1>
+    <p>Select an option below to get started:</p>
+    <nav>
+        <ul class="menu">
+            <li><a href="{{ url_for('study') }}">Text Study Assistant</a></li>
+            <li><a href="{{ url_for('voice') }}">Voice Question Assistant</a></li>
+            <li><a href="{{ url_for('image') }}">Image Text Extractor</a></li>
+        </ul>
+    </nav>
+</div>
+{% endblock %}
+>>>>>>> 05620c5 (Initial commit)
+=======
 <!DOCTYPE html>
 <html>
 
@@ -29,3 +77,4 @@
 </body>
 
 </html>
+>>>>>>> 93f3c2631af7d5ae6ac5f2e3f00e602294eac5ba
