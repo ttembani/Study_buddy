@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h2>Image Upload & Question Answering</h2>
+
+    <!-- Upload Image -->
+    <form method="POST" enctype="multipart/form-data">
+        <label>Upload an image:</label><br>
+        <input type="file" name="image" accept="image/*" required>
+        <input type="submit" value="Extract Text">
+    </form>
+
+    {% if extracted_text %}
+    <hr>
+    <h3>Extracted Text:</h3>
+    <div class="answer-box">{{ extracted_text }}</div>
+
+    <!-- Ask Question -->
+    <form method="POST">
+        <label>Ask a question based on the image:</label>
+        <input type="text" name="question" placeholder="e.g. What does the image explain?" required>
+        <input type="submit" value="Ask Question">
+    </form>
+    {% endif %}
+
+    {% if answer %}
+    <hr>
+    <h3>Answer:</h3>
+    <div class="answer-box">{{ answer }}</div>
+    {% endif %}
+</div>
+{% endblock %}

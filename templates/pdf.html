@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <h2>Upload PDF & Ask Questions</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <label>Upload PDF:</label>
+        <input type="file" name="pdf" accept=".pdf" required>
+        <input type="submit" value="Upload">
+    </form>
+
+    {% if extracted_text %}
+    <hr>
+    <h3>Ask a Question Based on PDF Content:</h3>
+    <form method="POST">
+        <input type="text" name="question" placeholder="Type your question" required>
+        <input type="submit" value="Ask">
+    </form>
+
+    {% if answer %}
+    <div class="answer-box">
+        <strong>Answer:</strong><br>
+        {{ answer }}
+    </div>
+    <a href="{{ url_for('download_pdf_answer') }}">
+        <button>Download Answer as PDF</button>
+    </a>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}
