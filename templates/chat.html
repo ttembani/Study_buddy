@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="chat-container">
+    <h1>Ask a Question</h1>
+    <form id="question-form">
+      <input name="question" type="text" placeholder="Type your question..." required>
+      <button type="submit">Ask</button>
+    </form>
+    <div id="answer-container">
+      <h3>Answer:</h3>
+      <div id="answer"></div>
+    </div>
+    <div id="history-container">
+      <h3>Recent Questions:</h3>
+      <div id="history"></div>
+    </div>
+    <a href="/" class="back-link">Back to Upload</a>
+  </div>
+
+  <script>
+    document.getElementById('question-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const question = e.target.question.value;
+      const answerDiv = document.getElementById('answer');
+
+      answerDiv.innerHTML = '<p>Thinking...</p>';
+
+      try {
+        const response = await fetch('/ask', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: `question=${encodeURIComponent(question)}`
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          answerDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        } else {
+          answerDiv.innerHTML = marked.parse(data.answer);
+          loadHistory();
+        }
+      } catch (error) {
+        answerDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        console.error('Error:', error);
+      }
+
+      e.target.reset();
+    });
+
+    async function loadHistory() {
+      try {
+        const response = await fetch('/history');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const history = await response.json();
+        const historyDiv = document.getElementById('history');
+
+        if (history.error) {
+          historyDiv.innerHTML = `<p>${history.error}</p>`;
+          return;
+        }
+
+        if (history.length === 0) {
+          historyDiv.innerHTML = '<p>No history yet</p>';
+          return;
+        }
+
+        let html = '<ul>';
+        history.forEach(item => {
+          html += `
+            <li>
+              <strong>Q:</strong> ${item.question}<br>
+              <strong>A:</strong> ${marked.parse(item.answer)}
+              <small>${new Date(item.timestamp).toLocaleString()}</small>
+            </li>
+          `;
+        });
+        html += '</ul>';
+        historyDiv.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading history:', error);
+      }
+    }
+
+    // Load history when page loads
+    document.addEventListener('DOMContentLoaded', loadHistory);
+  </script>
+</body>
+</html>
